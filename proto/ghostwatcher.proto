@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package ghostwatcher.v1;
+
+option go_package = "ghostwatcher/internal/gen/ghostwatcherv1;ghostwatcherv1";
+
+service MacEnrollmentService {
+  rpc EnrollMac(EnrollMacRequest) returns (EnrollMacResponse);
+}
+
+service MachOIngestorService {
+  rpc StreamProcessEvents(stream StreamProcessEventRequest) returns (StreamProcessEventsResponse);
+  rpc CheckSignStatus(CheckSignStatusRequest) returns (CheckSignStatusResponse);
+}
+
+service XProtectLookupService {
+  rpc LookupHash(XProtectLookupRequest) returns (XProtectLookupResponse);
+}
+
+message EnrollMacRequest {
+  string hostname = 1;
+  string os_version = 2;
+  string serial_number = 3;
+  bool gatekeeper_enabled = 4;
+  bool sip_enabled = 5;
+  string agent_version = 6;
+}
+
+message EnrollMacResponse {
+  string agent_id = 1;
+  string auth_token = 2;
+  uint32 security_posture_score = 3;
+  string message = 4;
+}
+
+message StreamProcessEventRequest {
+  string agent_id = 1;
+  string auth_token = 2;
+  ProcessEvent event = 3;
+}
+
+message ProcessEvent {
+  int32 pid = 1;
+  string path = 2;
+  string bundle_id = 3;
+  string signing_identifier = 4;
+  bool is_sandboxed = 5;
+  string cd_hash = 6;
+  string team_id = 7;
+  string sha256 = 8;
+  int64 observed_unix = 9;
+}
+
+message StreamProcessEventsResponse {
+  string agent_id = 1;
+  uint64 total_events = 2;
+  uint64 alert_events = 3;
+  string status = 4;
+}
+
+message CheckSignStatusRequest {
+  string agent_id = 1;
+  string auth_token = 2;
+  string path = 3;
+}
+
+message CheckSignStatusResponse {
+  bool signed = 1;
+  bool apple_signed = 2;
+  string signing_identifier = 3;
+  string team_id = 4;
+  string detail = 5;
+}
+
+message XProtectLookupRequest {
+  string hash = 1;
+}
+
+message XProtectLookupResponse {
+  enum Verdict {
+    VERDICT_UNSPECIFIED = 0;
+    SAFE = 1;
+    MALICIOUS = 2;
+  }
+
+  Verdict verdict = 1;
+  string threat_name = 2;
+  string detail = 3;
+}

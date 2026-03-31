@@ -2,6 +2,7 @@
 
 GhostWatcher is a simple Endpoint Detection and Response (EDR) simulation for macOS.
 It was built for an Integration System course project to show how a security team can monitor Mac devices in near real-time.
+In the current chapter, our Integration System course material is gRPC, and this project is my implementation of that material by building a simple EDR.
 
 ## What This Project Does
 

@@ -172,6 +172,17 @@ func (s *Service) StreamProcessEvents(stream grpc.ClientStreamingServer[ghostwat
 		host = agent.Hostname
 		total++
 
+		log.Printf(
+			"[EVENT] host=%s pid=%d path=%s signer=%s team=%s sha256=%s sandboxed=%t",
+			host,
+			event.GetPid(),
+			event.GetPath(),
+			emptyFallback(event.GetSigningIdentifier(), "unknown"),
+			emptyFallback(event.GetTeamId(), "-"),
+			emptyFallback(event.GetSha256(), "-"),
+			event.GetIsSandboxed(),
+		)
+
 		unsigned := !looksSigned(event)
 		eventAlert := false
 		if unsigned {
@@ -260,6 +271,13 @@ func (s *Service) LookupHash(_ context.Context, req *ghostwatcherv1.XProtectLook
 		ThreatName: "",
 		Detail:     verdict.Detail,
 	}, nil
+}
+
+func emptyFallback(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func (s *Service) authorize(agentID, token string) (MacInfo, error) {

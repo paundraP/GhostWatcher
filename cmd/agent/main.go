@@ -29,6 +29,7 @@ type config struct {
 	checkPath  string
 	lookupHash string
 	live       bool
+	demo       bool
 	noStream   bool
 	continuous bool
 }
@@ -177,13 +178,16 @@ func runContinuousStream(client ghostwatcherv1.MachOIngestorServiceClient, agent
 }
 
 func parseFlags() config {
-	cfg := config{}
+	cfg := config{
+		live: true,
+	}
 	flag.StringVar(&cfg.serverAddr, "server", "localhost:50051", "GhostWatcher server address")
 	flag.IntVar(&cfg.events, "events", 45, "Number of process events to send")
 	flag.DurationVar(&cfg.interval, "interval", 250*time.Millisecond, "Delay between streamed events")
 	flag.StringVar(&cfg.checkPath, "check-path", "", "Path to verify with CheckSignStatus(path)")
 	flag.StringVar(&cfg.lookupHash, "lookup-hash", threatintel.ShlayerHash, "Hash to lookup in XProtect service (set empty to skip)")
-	flag.BoolVar(&cfg.live, "live", false, "Collect real process list from host; false uses deterministic demo events")
+	flag.BoolVar(&cfg.live, "live", true, "Collect real process list from host")
+	flag.BoolVar(&cfg.demo, "demo", false, "Use deterministic demo events instead of real process data")
 	flag.BoolVar(&cfg.noStream, "no-stream", false, "Skip telemetry streaming")
 	flag.BoolVar(&cfg.continuous, "continuous", false, "Run continuous streaming until interrupted (Ctrl+C)")
 	flag.Parse()
@@ -193,6 +197,9 @@ func parseFlags() config {
 	}
 	if cfg.interval <= 0 {
 		cfg.interval = 250 * time.Millisecond
+	}
+	if cfg.demo {
+		cfg.live = false
 	}
 	return cfg
 }

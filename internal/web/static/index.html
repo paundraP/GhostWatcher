@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GhostWatcher Dashboard</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="orb orb-a"></div>
+  <div class="orb orb-b"></div>
+  <main class="layout">
+    <section class="hero">
+      <p class="eyebrow">GhostWatcher EDR</p>
+      <div class="hero-row">
+        <div>
+          <h1>Realtime macOS telemetry with gRPC and WebSocket.</h1>
+          <p class="lede">Dashboard ini menampilkan event proses, status agent, dan alert keamanan secara langsung dari backend GhostWatcher.</p>
+        </div>
+        <div class="connection" id="connection-state">Connecting</div>
+      </div>
+    </section>
+
+    <section class="stats" id="stats-grid">
+      <article class="stat-card">
+        <span>Total Agents</span>
+        <strong id="stat-total-agents">0</strong>
+      </article>
+      <article class="stat-card">
+        <span>Connected Agents</span>
+        <strong id="stat-connected-agents">0</strong>
+      </article>
+      <article class="stat-card">
+        <span>Total Events</span>
+        <strong id="stat-total-events">0</strong>
+      </article>
+      <article class="stat-card alert-card">
+        <span>Alert Events</span>
+        <strong id="stat-alert-events">0</strong>
+      </article>
+    </section>
+
+    <section class="grid two-col">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Agent Status</h2>
+          <button class="ghost-button" id="refresh-snapshot">Refresh Snapshot</button>
+        </div>
+        <div class="agent-list" id="agent-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Command Bridge</h2>
+          <span class="pill">WebSocket -> gRPC</span>
+        </div>
+        <form class="command-form" id="lookup-form">
+          <label for="lookup-hash">Lookup Hash</label>
+          <div class="inline-form">
+            <input id="lookup-hash" name="hash" placeholder="Paste SHA256 hash" />
+            <button type="submit">Run Lookup</button>
+          </div>
+        </form>
+        <form class="command-form" id="sign-form">
+          <label for="sign-agent">Check Sign Status</label>
+          <select id="sign-agent" name="agent_id"></select>
+          <input id="sign-path" name="path" placeholder="Executable path" />
+          <button type="submit">Inspect Signature</button>
+        </form>
+        <div class="command-output" id="command-output">
+          <p class="command-placeholder">Waiting for command output...</p>
+        </div>
+      </article>
+    </section>
+
+    <section class="grid two-col bottom-grid">
+      <article class="panel log-panel">
+        <div class="panel-head">
+          <h2>Live Activity</h2>
+          <span class="pill">Streaming</span>
+        </div>
+        <div class="event-log" id="event-log"></div>
+      </article>
+
+      <article class="panel alerts-panel">
+        <div class="panel-head">
+          <h2>Alert Feed</h2>
+          <span class="pill danger">Server Initiated</span>
+        </div>
+        <div class="alert-log" id="alert-log"></div>
+      </article>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

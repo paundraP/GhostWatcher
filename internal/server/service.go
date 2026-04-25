@@ -48,6 +48,7 @@ type Service struct {
 	xprotectDB map[string]string
 	store      DataStore
 	vtClient   threatintel.LookupClient
+	hub        *EventHub
 }
 
 type threatVerdict struct {
@@ -133,6 +134,22 @@ func (s *Service) EnrollMac(_ context.Context, req *ghostwatcherv1.EnrollMacRequ
 
 	log.Printf("[INFO] Enrolled %s (%s) - posture=%d gatekeeper=%t sip=%t", info.Hostname, agentID, score, info.GatekeeperEnabled, info.SIPEnabled)
 
+	s.publishEvent(DashboardEvent{
+		Type:      "agent_enrolled",
+		AgentID:   info.AgentID,
+		Hostname:  info.Hostname,
+		Severity:  "info",
+		Message:   "Agent enrolled successfully",
+		Timestamp: info.LastSeen,
+		Data: map[string]any{
+			"os_version":             info.OSVersion,
+			"serial_number":          info.SerialNumber,
+			"security_posture_score": info.SecurityPosture,
+			"gatekeeper_enabled":     info.GatekeeperEnabled,
+			"sip_enabled":            info.SIPEnabled,
+		},
+	})
+
 	return &ghostwatcherv1.EnrollMacResponse{
 		AgentId:              agentID,
 		AuthToken:            token,
@@ -185,10 +202,44 @@ func (s *Service) StreamProcessEvents(stream grpc.ClientStreamingServer[ghostwat
 
 		unsigned := !looksSigned(event)
 		eventAlert := false
+		s.publishEvent(DashboardEvent{
+			Type:      "process_event",
+			AgentID:   agentID,
+			Hostname:  host,
+			Severity:  "info",
+			Message:   fmt.Sprintf("Process observed: %s", event.GetPath()),
+			Timestamp: time.Unix(event.GetObservedUnix(), 0),
+			Data: map[string]any{
+				"pid":                event.GetPid(),
+				"path":               event.GetPath(),
+				"bundle_id":          event.GetBundleId(),
+				"signing_identifier": emptyFallback(event.GetSigningIdentifier(), "unknown"),
+				"team_id":            emptyFallback(event.GetTeamId(), "-"),
+				"sha256":             emptyFallback(event.GetSha256(), "-"),
+				"is_sandboxed":       event.GetIsSandboxed(),
+				"is_alert":           false,
+				"observed_unix":      event.GetObservedUnix(),
+			},
+		})
 		if unsigned {
 			alerts++
 			eventAlert = true
 			log.Printf("[ALERT] Unsigned process detected on %s: %s", host, event.GetPath())
+			s.publishEvent(DashboardEvent{
+				Type:      "security_alert",
+				AgentID:   agentID,
+				Hostname:  host,
+				Severity:  "high",
+				Message:   "Unsigned process detected",
+				Timestamp: time.Unix(event.GetObservedUnix(), 0),
+				Data: map[string]any{
+					"kind":               "unsigned_process",
+					"pid":                event.GetPid(),
+					"path":               event.GetPath(),
+					"signing_identifier": emptyFallback(event.GetSigningIdentifier(), "unknown"),
+					"sha256":             emptyFallback(event.GetSha256(), "-"),
+				},
+			})
 		}
 
 		threatVerdict, lookupErr := s.lookupThreat(stream.Context(), event.GetSha256())
@@ -200,6 +251,23 @@ func (s *Service) StreamProcessEvents(stream grpc.ClientStreamingServer[ghostwat
 			alerts++
 			eventAlert = true
 			log.Printf("[ALERT] Threat Intel match (%s) on %s: %s", threatVerdict.ThreatName, host, event.GetPath())
+			s.publishEvent(DashboardEvent{
+				Type:      "security_alert",
+				AgentID:   agentID,
+				Hostname:  host,
+				Severity:  "critical",
+				Message:   fmt.Sprintf("Threat intel match: %s", threatVerdict.ThreatName),
+				Timestamp: time.Unix(event.GetObservedUnix(), 0),
+				Data: map[string]any{
+					"kind":        "threat_match",
+					"pid":         event.GetPid(),
+					"path":        event.GetPath(),
+					"sha256":      emptyFallback(event.GetSha256(), "-"),
+					"threat_name": threatVerdict.ThreatName,
+					"detail":      threatVerdict.Detail,
+					"source":      threatVerdict.Source,
+				},
+			})
 		}
 
 		if err := s.store.InsertProcessEvent(stream.Context(), agentID, event, eventAlert, threatVerdict.ThreatName); err != nil {
@@ -215,6 +283,18 @@ func (s *Service) StreamProcessEvents(stream grpc.ClientStreamingServer[ghostwat
 
 	s.setConnected(context.Background(), agentID, false)
 	log.Printf("[INFO] Streaming %d logs from %s...", total, host)
+	s.publishEvent(DashboardEvent{
+		Type:      "agent_disconnected",
+		AgentID:   agentID,
+		Hostname:  host,
+		Severity:  "warning",
+		Message:   "Telemetry stream closed",
+		Timestamp: time.Now(),
+		Data: map[string]any{
+			"total_events": total,
+			"alert_events": alerts,
+		},
+	})
 
 	return stream.SendAndClose(&ghostwatcherv1.StreamProcessEventsResponse{
 		AgentId:     agentID,
@@ -352,22 +432,22 @@ func (s *Service) lookupThreat(ctx context.Context, hash string) (threatVerdict,
 		}, nil
 	}
 
-	if cached, found, err := s.store.GetThreat(ctx, hash); err != nil {
-		log.Printf("[WARN] threat cache lookup failed for %s: %v", hash, err)
-	} else if found {
-		return threatVerdict{
-			Hash:       cached.Hash,
-			Malicious:  cached.Malicious,
-			ThreatName: cached.ThreatName,
-			Detail:     cached.Detail,
-			Source:     cached.Source,
-		}, nil
-	}
-
 	if s.vtClient != nil {
 		result, err := s.vtClient.LookupHash(ctx, hash)
 		if err != nil {
 			if !errors.Is(err, threatintel.ErrNotConfigured) {
+				if cached, found, cacheErr := s.store.GetThreat(ctx, hash); cacheErr != nil {
+					log.Printf("[WARN] threat cache lookup failed for %s after VT error: %v", hash, cacheErr)
+				} else if found {
+					log.Printf("[WARN] using cached threat intel for %s after VT lookup error: %v", hash, err)
+					return threatVerdict{
+						Hash:       cached.Hash,
+						Malicious:  cached.Malicious,
+						ThreatName: cached.ThreatName,
+						Detail:     cached.Detail,
+						Source:     cached.Source,
+					}, nil
+				}
 				return threatVerdict{}, err
 			}
 		} else {
@@ -390,6 +470,18 @@ func (s *Service) lookupThreat(ctx context.Context, hash string) (threatVerdict,
 				Source:     result.Source,
 			}, nil
 		}
+	}
+
+	if cached, found, err := s.store.GetThreat(ctx, hash); err != nil {
+		log.Printf("[WARN] threat cache lookup failed for %s: %v", hash, err)
+	} else if found {
+		return threatVerdict{
+			Hash:       cached.Hash,
+			Malicious:  cached.Malicious,
+			ThreatName: cached.ThreatName,
+			Detail:     cached.Detail,
+			Source:     cached.Source,
+		}, nil
 	}
 
 	return threatVerdict{

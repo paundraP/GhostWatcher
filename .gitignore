@@ -1,3 +1,8 @@
 .env
 Detail.md
 Project.md
+.DS_Store
+.gocache/
+.gopath/
+new-feature.md
+websocket-summary.md
